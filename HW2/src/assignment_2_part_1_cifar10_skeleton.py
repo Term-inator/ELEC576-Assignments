@@ -62,11 +62,11 @@ from tqdm import tqdm
 import json
 
 # hyperparameters
-batch_size = 64             # 32 64
-epochs = 5
-lr = 0.001                  # 0.001 0.01
+batch_size = 64            # 32 64
+epochs = 10
+lr = 0.001                 # 0.001 0.0005
 optimizer_type = "adam"     # "adam" "sgd"
-momentum = 0.9              # 0.9 0.5
+momentum = 0.9
 try_cuda = True
 seed = 1000
 
@@ -86,7 +86,7 @@ if logging_dir is None:
     runs_dir = Path("../") / Path(f"runs/")
     runs_dir.mkdir(exist_ok=True)
 
-    logging_dir = runs_dir / Path(f"{datetime_str}")
+    logging_dir = runs_dir / Path(f"cifar10_{datetime_str}")
 
     logging_dir.mkdir(exist_ok=True)
     logging_dir = str(logging_dir.absolute())
@@ -135,7 +135,7 @@ check_data_loader_dim(test_loader)
 
 layer_1_n_filters = 32
 layer_2_n_filters = 64
-fc_1_n_nodes = 120  # 1024 120
+fc_1_n_nodes = 1024  # 1024 120
 padding = "same"
 kernel_size = 5
 verbose = False
@@ -232,10 +232,25 @@ def test(epoch):
 
         logits, probas = model(data)
 
-        # [insert-code: finish testing loop and logging metrics]
         test_loss += criterion(logits, target).item()
         pred = logits.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+
+        # compute conv1 activations statistics
+        conv1_activations = model.features[0].forward(data)
+        conv1_activations = conv1_activations.view(conv1_activations.size(0), -1)
+        conv1_mean = torch.mean(conv1_activations, dim=0)
+        conv1_std = torch.std(conv1_activations, dim=0)
+        writer.add_histogram('conv1/mean', conv1_mean, epoch)
+        writer.add_histogram('conv1/std', conv1_std, epoch)
+
+        # compute conv2 activations statistics
+        conv2_activations = model.features[3].forward(model.features[0].forward(data))
+        conv2_activations = conv2_activations.view(conv2_activations.size(0), -1)
+        conv2_mean = torch.mean(conv2_activations, dim=0)
+        conv2_std = torch.std(conv2_activations, dim=0)
+        writer.add_histogram('conv2/mean', conv2_mean, epoch)
+        writer.add_histogram('conv2/std', conv2_std, epoch)
 
     test_loss /= len(test_loader.dataset)
     accuracy = 100. * correct / len(test_loader.dataset)
@@ -250,7 +265,7 @@ for epoch in range(1, epochs + 1):
     test(epoch)
 
     # save model
-    model_name = f'cifar10_lenet5.pt'
+    model_name = f'lenet5.pt'
     torch.save(model.state_dict(), logging_dir + "/" + model_name)
     # store params in yml file
     params = {
